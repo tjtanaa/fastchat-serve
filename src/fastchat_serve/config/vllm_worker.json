@@ -1,0 +1,22 @@
+{
+    "host": "localhost",
+    "port": 21005,
+    "worker_address": "http://localhost:21005",
+    "controller_address": "http://localhost:21001",
+    "model_path": [
+        "/media/hdd2/hf_model/CodeLlama-7b-Instruct-hf",
+        "/media/hdd2/hf_model/vicuna-7b-v1.5"
+    ],
+    "model_names": [
+        "llama-2-CodeLlama-7b-Instruct-hf",
+        "vicuna-7b-v1.5"
+    ],
+    "languages": [
+        ["en"],
+        ["en"]
+    ],
+    "conv_template": [
+        "llama-2",
+        "vicuna_v1.1"
+    ]
+}
