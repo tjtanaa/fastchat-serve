@@ -23,6 +23,9 @@ from fastchat_serve.model_worker import (
     logger,
     worker_id,
 )
+from fastchat_serve.utils.config_parser import (
+    VLLMModelWorkerArgParser,
+)
 from fastchat.utils import get_context_length
 
 
@@ -193,6 +196,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--controller-address", type=str, default="http://localhost:21001"
     )
+    parser.add_argument(
+        "--config", type=str, default=None
+    )
     parser.add_argument("--model-path", type=str, default="lmsys/vicuna-7b-v1.3")
     parser.add_argument(
         "--model-names",
@@ -208,11 +214,16 @@ if __name__ == "__main__":
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
+
+    if args.config:
+        args = VLLMModelWorkerArgParser(args.config).override(args)
+    
+    
     if args.model_path:
         args.model = args.model_path
     if args.num_gpus > 1:
         args.tensor_parallel_size = args.num_gpus
-    if args.quantizaiton:
+    if args.quantization:
         args.quantization = args.quantization
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
@@ -227,5 +238,6 @@ if __name__ == "__main__":
         args.no_register,
         engine,
         args.conv_template,
+        args.languages
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
