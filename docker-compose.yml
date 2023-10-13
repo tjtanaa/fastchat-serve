@@ -1,0 +1,21 @@
+version: '3.5'
+services:
+  fastchat:
+    container_name: fastchat-llm
+    hostname: fastchat-llm
+    build: 
+      context: ./
+      dockerfile: ./deploy.Dockerfile
+    ports:
+      - "8000" 
+    command: ["ls"]
+    volumes:
+      - ./:/app
+      - /media/hdd2/hf_model:/app/hf_model
+    deploy:
+      resources:
+        reservations:
+          devices:
+          - driver: nvidia
+            count: 8
+            capabilities: [gpu]

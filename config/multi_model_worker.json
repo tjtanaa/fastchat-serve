@@ -1,0 +1,18 @@
+{
+    "host": "localhost",
+    "port": 21009,
+    "worker_address": "http://localhost:21009",
+    "controller_address": "http://localhost:21001",
+    "model_path": [
+        "/app/hf_model/vicuna-7b-v1.5"
+    ],
+    "model_names": [
+        "vicuna-7b-v1.5"
+    ],
+    "languages": [
+        ["en"]
+    ],
+    "conv_template": [
+        "vicuna_v1.1"
+    ]
+}

@@ -1,0 +1,4 @@
+transformers
+accelerate
+git+https://github.com/lm-sys/FastChat.git
+sentencepiece
