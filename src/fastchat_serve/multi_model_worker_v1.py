@@ -54,13 +54,10 @@ from fastchat.model.model_chatglm import generate_stream_chatglm
 from fastchat.model.model_falcon import generate_stream_falcon
 from fastchat.model.model_codet5p import generate_stream_codet5p
 from fastchat.modules.gptq import GptqConfig
-from fastchat.modules.exllama import ExllamaConfig
-from fastchat.modules.xfastertransformer import XftConfig
 from fastchat.serve.inference import generate_stream
 from fastchat_serve.model_worker import ModelWorker, worker_id, logger
 from fastchat.utils import build_logger, pretty_print_semaphore, get_context_length
 from fastchat_serve.utils.config_parser import MultiModelWorkerArgParser
-
 
 # We store both the underlying workers and a mapping from their model names to
 # the worker instance.  This makes it easy to fetch the appropriate worker for
@@ -152,7 +149,7 @@ async def api_get_conv(request: Request):
 async def api_model_details(request: Request):
     params = await request.json()
     worker = worker_map[params["model"]]
-    return {"context_length": worker.context_len}
+    return {"context_length": worker.context_len, "languages": worker.languages}
 
 
 def create_multi_model_worker():
@@ -165,6 +162,9 @@ def create_multi_model_worker():
     parser.add_argument("--worker-address", type=str, default="http://localhost:21002")
     parser.add_argument(
         "--controller-address", type=str, default="http://localhost:21001"
+    )
+    parser.add_argument(
+        "--config", type=str, default=None
     )
     add_model_args(parser)
     # Override the model path to be repeated and align it with model names.
@@ -191,15 +191,7 @@ def create_multi_model_worker():
     parser.add_argument("--limit-worker-concurrency", type=int, default=5)
     parser.add_argument("--stream-interval", type=int, default=2)
     parser.add_argument("--no-register", action="store_true")
-    parser.add_argument(
-        "--ssl",
-        action="store_true",
-        required=False,
-        default=False,
-        help="Enable SSL. Requires OS Environment variables 'SSL_KEYFILE' and 'SSL_CERTFILE'.",
-    )
     args = parser.parse_args()
-    logger.info(f"args: {args}")
 
     if args.model_names is None:
         args.model_names = [[x.split("/")[-1]] for x in args.model_path]
@@ -222,23 +214,6 @@ def create_multi_model_worker():
         groupsize=args.gptq_groupsize,
         act_order=args.gptq_act_order,
     )
-    if args.enable_exllama:
-        exllama_config = ExllamaConfig(
-            max_seq_len=args.exllama_max_seq_len,
-            gpu_split=args.exllama_gpu_split,
-        )
-    else:
-        exllama_config = None
-    if args.enable_xft:
-        xft_config = XftConfig(
-            max_seq_len=args.xft_max_seq_len,
-            data_type=args.xft_dtype,
-        )
-        if args.device != "cpu":
-            print("xFasterTransformer now is only support CPUs. Reset device to CPU")
-            args.device = "cpu"
-    else:
-        xft_config = None
 
     if args.conv_template is None:
         args.conv_template = [None] * len(args.model_path)
@@ -250,6 +225,7 @@ def create_multi_model_worker():
     for conv_template, model_path, model_names in zip(
         args.conv_template, args.model_path, args.model_names
     ):
+        logger.info(f"Create worker for model: {model_names}")
         w = ModelWorker(
             args.controller_address,
             args.worker_address,
@@ -264,8 +240,6 @@ def create_multi_model_worker():
             load_8bit=args.load_8bit,
             cpu_offloading=args.cpu_offloading,
             gptq_config=gptq_config,
-            exllama_config=exllama_config,
-            xft_config=xft_config,
             stream_interval=args.stream_interval,
             conv_template=conv_template,
         )
@@ -292,14 +266,4 @@ def create_multi_model_worker():
 
 if __name__ == "__main__":
     args, workers = create_multi_model_worker()
-    if args.ssl:
-        uvicorn.run(
-            app,
-            host=args.host,
-            port=args.port,
-            log_level="info",
-            ssl_keyfile=os.environ["SSL_KEYFILE"],
-            ssl_certfile=os.environ["SSL_CERTFILE"],
-        )
-    else:
-        uvicorn.run(app, host=args.host, port=args.port, log_level="info")
+    uvicorn.run(app, host=args.host, port=args.port, log_level="info")

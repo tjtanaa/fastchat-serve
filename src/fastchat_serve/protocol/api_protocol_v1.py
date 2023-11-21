@@ -30,8 +30,8 @@ class ModelPermission(BaseModel):
 class ModelCard(BaseModel):
     id: str
     object: str = "model"
-    context_length: int = Field(default_factory=lambda: int(1024)) # add this
-    languages: List[str] = Field(default_factory=['en']) # add this
+    context_length: Field(default_factory=lambda: int(1024)) # add this
+    languages: List[str] = Field(default_factory=lambda: ['en']) # add this
     created: int = Field(default_factory=lambda: int(time.time()))
     owned_by: str = "fastchat"
     root: Optional[str] = None
@@ -50,28 +50,17 @@ class UsageInfo(BaseModel):
     completion_tokens: Optional[int] = 0
 
 
-class LogProbs(BaseModel):
-    text_offset: List[int] = Field(default_factory=list)
-    token_logprobs: List[Optional[float]] = Field(default_factory=list)
-    tokens: List[str] = Field(default_factory=list)
-    top_logprobs: List[Optional[Dict[str, float]]] = Field(default_factory=list)
-
-
-class ChatCompletionRequest(BaseModel):
+class APIChatCompletionRequest(BaseModel):
     model: str
     messages: Union[str, List[Dict[str, str]]]
     temperature: Optional[float] = 0.7
     top_p: Optional[float] = 1.0
-    top_k: Optional[int] = -1
     n: Optional[int] = 1
     max_tokens: Optional[int] = None
     stop: Optional[Union[str, List[str]]] = None
     stream: Optional[bool] = False
-    presence_penalty: Optional[float] = 0.0
-    frequency_penalty: Optional[float] = 0.0
     user: Optional[str] = None
-    use_beam_search: Optional[bool] = False
-    best_of: Optional[int] = None
+    repetition_penalty: Optional[float] = 1.0
 
 
 class ChatMessage(BaseModel):
@@ -113,39 +102,24 @@ class ChatCompletionStreamResponse(BaseModel):
     choices: List[ChatCompletionResponseStreamChoice]
 
 
-class TokenCheckRequestItem(BaseModel):
+class APITokenCheckRequestItem(BaseModel):
     model: str
     prompt: str
     max_tokens: int
 
 
-class TokenCheckRequest(BaseModel):
-    prompts: List[TokenCheckRequestItem]
+class APITokenCheckRequest(BaseModel):
+    prompts: List[APITokenCheckRequestItem]
 
 
-class TokenCheckResponseItem(BaseModel):
+class APITokenCheckResponseItem(BaseModel):
     fits: bool
     tokenCount: int
     contextLength: int
 
 
-class TokenCheckResponse(BaseModel):
-    prompts: List[TokenCheckResponseItem]
-
-
-class EmbeddingsRequest(BaseModel):
-    model: Optional[str] = None
-    engine: Optional[str] = None
-    input: Union[str, List[Any]]
-    user: Optional[str] = None
-    encoding_format: Optional[str] = None
-
-
-class EmbeddingsResponse(BaseModel):
-    object: str = "list"
-    data: List[Dict[str, Any]]
-    model: str
-    usage: UsageInfo
+class APITokenCheckResponse(BaseModel):
+    prompts: List[APITokenCheckResponseItem]
 
 
 class CompletionRequest(BaseModel):
@@ -158,20 +132,17 @@ class CompletionRequest(BaseModel):
     stop: Optional[Union[str, List[str]]] = None
     stream: Optional[bool] = False
     top_p: Optional[float] = 1.0
-    top_k: Optional[int] = -1
     logprobs: Optional[int] = None
     echo: Optional[bool] = False
     presence_penalty: Optional[float] = 0.0
     frequency_penalty: Optional[float] = 0.0
     user: Optional[str] = None
-    use_beam_search: Optional[bool] = False
-    best_of: Optional[int] = None
 
 
 class CompletionResponseChoice(BaseModel):
     index: int
     text: str
-    logprobs: Optional[LogProbs] = None
+    logprobs: Optional[int] = None
     finish_reason: Optional[Literal["stop", "length"]] = None
 
 
@@ -187,7 +158,7 @@ class CompletionResponse(BaseModel):
 class CompletionResponseStreamChoice(BaseModel):
     index: int
     text: str
-    logprobs: Optional[LogProbs] = None
+    logprobs: Optional[float] = None
     finish_reason: Optional[Literal["stop", "length"]] = None
 
 

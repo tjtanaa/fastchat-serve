@@ -74,30 +74,30 @@ def main(args):
     else:
         raise NotImplementedError("Only support benchmarking in chatmode")
 
-    data_json = {
-        "prompts": [
-            {
-                "model": args.model,
-                "prompt": full_response,
-                "max_tokens": 0
-            }
-        ]
-    }
-    response = requests.post(
-        token_check_url,
-        headers=headers, 
-        data=json.dumps(data_json)
+    # data_json = {
+    #     "prompts": [
+    #         {
+    #             "model": args.model,
+    #             "prompt": full_response,
+    #             "max_tokens": 0
+    #         }
+    #     ]
+    # }
+    # response = requests.post(
+    #     token_check_url,
+    #     headers=headers, 
+    #     data=json.dumps(data_json)
 
-    )
+    # )
 
-    response_json  = response.json()
-    speed = round(response_json["prompts"][0]["tokenCount"] / duration, 2)
-    logger.info(f"""
-        output: {full_response}
+    # response_json  = response.json()
+    # speed = round(response_json["prompts"][0]["tokenCount"] / duration, 2)
+    # logger.info(f"""
+    #     output: {full_response}
 
 
-        speed (token/s): {speed}
-    """)
+    #     speed (token/s): {speed}
+    # """)
 
 
 if __name__ == "__main__":

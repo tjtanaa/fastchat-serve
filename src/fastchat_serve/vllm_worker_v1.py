@@ -11,38 +11,25 @@ from typing import List
 
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse, JSONResponse
+import torch
 import uvicorn
 from vllm import AsyncLLMEngine
 from vllm.engine.arg_utils import AsyncEngineArgs
 from vllm.sampling_params import SamplingParams
 from vllm.utils import random_uuid
 
-from fastchat_serve.base_model_worker import BaseModelWorker
 from fastchat_serve.model_worker import (
+    BaseModelWorker,
     logger,
     worker_id,
 )
-from fastchat.utils import get_context_length
 from fastchat_serve.utils.config_parser import (
     VLLMModelWorkerArgParser,
 )
-
-from http import HTTPStatus
-
-from fastchat_serve.protocol.openai_api_protocol import (
-    ErrorResponse,
-)
-from loguru import logger
+from fastchat.utils import get_context_length
 
 app = FastAPI()
 
-
-
-def create_error_response(status_code: HTTPStatus,
-                          message: str) -> JSONResponse:
-    return JSONResponse(ErrorResponse(message=message,
-                                      type="invalid_request_error").dict(),
-                        status_code=status_code.value)
 
 class VLLMWorker(BaseModelWorker):
     def __init__(
@@ -56,6 +43,7 @@ class VLLMWorker(BaseModelWorker):
         no_register: bool,
         llm_engine: AsyncLLMEngine,
         conv_template: str,
+        languages: List[str],
     ):
         super().__init__(
             controller_addr,
@@ -65,6 +53,7 @@ class VLLMWorker(BaseModelWorker):
             model_names,
             limit_worker_concurrency,
             conv_template,
+            languages,
         )
 
         logger.info(
@@ -83,18 +72,12 @@ class VLLMWorker(BaseModelWorker):
         request_id = params.pop("request_id")
         temperature = float(params.get("temperature", 1.0))
         top_p = float(params.get("top_p", 1.0))
-        top_k = params.get("top_k", -1.0)
-        presence_penalty = float(params.get("presence_penalty", 0.0))
-        frequency_penalty = float(params.get("frequency_penalty", 0.0))
         max_new_tokens = params.get("max_new_tokens", 256)
         stop_str = params.get("stop", None)
         stop_token_ids = params.get("stop_token_ids", None) or []
         if self.tokenizer.eos_token_id is not None:
             stop_token_ids.append(self.tokenizer.eos_token_id)
         echo = params.get("echo", True)
-        use_beam_search = params.get("use_beam_search", False)
-        best_of = params.get("best_of", None)
-        n = params.get("n", 1)
 
         # Handle stop_str
         stop = set()
@@ -109,70 +92,33 @@ class VLLMWorker(BaseModelWorker):
 
         # make sampling params in vllm
         top_p = max(top_p, 1e-5)
-        if temperature <= 1e-5: # greedy search
+        if temperature <= 1e-5:
             top_p = 1.0
-
-        try:
-            sampling_params = SamplingParams(
-                n=n,
-                temperature=temperature,
-                top_p=top_p,
-                use_beam_search=use_beam_search,
-                stop=list(stop),
-                max_tokens=max_new_tokens,
-                top_k=top_k,
-                presence_penalty=presence_penalty,
-                frequency_penalty=frequency_penalty,
-                best_of=best_of,
-            )
-        except ValueError as e:
-            yield create_error_response(HTTPStatus.BAD_REQUEST, str(e))
-        
-        logger.debug(f"sampling_params: {sampling_params}")
+        sampling_params = SamplingParams(
+            n=1,
+            temperature=temperature,
+            top_p=top_p,
+            use_beam_search=False,
+            stop=list(stop),
+            max_tokens=max_new_tokens,
+        )
         results_generator = engine.generate(context, sampling_params, request_id)
 
         async for request_output in results_generator:
-
-            # logger.debug(f"request_output: {request_output}")
-            logger.debug(f'request_output.outputs: {request_output.outputs}')
             prompt = request_output.prompt
             if echo:
                 text_outputs = [
-                    prompt + output.text if output.finish_reason is not None else prompt for output in request_output.outputs
+                    prompt + output.text for output in request_output.outputs
                 ]
             else:
-                text_outputs = [output.text  if output.finish_reason is not None else "" for output in request_output.outputs]
-            # text_outputs = " ".join(text_outputs)
+                text_outputs = [output.text for output in request_output.outputs]
+            text_outputs = " ".join(text_outputs)
             # Note: usage is not supported yet
-            prompt_tokens = len(request_output.prompt_token_ids)
-            completion_tokens = sum(
-                len(output.token_ids) for output in request_output.outputs
-            )
-
-            index_list = [output.index for output in request_output.outputs]
-            ret = {
-                "text": text_outputs,
-                "index": index_list,
-                "error_code": 0,
-                "usage": {
-                    "prompt_tokens": prompt_tokens,
-                    "completion_tokens": completion_tokens,
-                    "total_tokens": prompt_tokens + completion_tokens,
-                },
-                "cumulative_logprob": [
-                    output.cumulative_logprob for output in request_output.outputs
-                ],
-                "finish_reason": [output.finish_reason for output in request_output.outputs],
-                # "finish_reason": request_output.outputs[0].finish_reason
-                # if len(request_output.outputs) == 1
-                # else [output.finish_reason for output in request_output.outputs],
-            }
-            # logger.debug(f"ret {ret}")
+            ret = {"text": text_outputs, "error_code": 0, "usage": {}}
             yield (json.dumps(ret) + "\0").encode()
 
     async def generate(self, params):
         async for x in self.generate_stream(params):
-            logger.debug(f"x: {x}")
             pass
         return json.loads(x[:-1].decode())
 
@@ -238,7 +184,7 @@ async def api_get_conv(request: Request):
 
 @app.post("/model_details")
 async def api_model_details(request: Request):
-    return {"context_length": worker.context_len}
+    return {"context_length": worker.context_len, "languages": worker.languages}
 
 
 if __name__ == "__main__":
@@ -249,7 +195,10 @@ if __name__ == "__main__":
     parser.add_argument(
         "--controller-address", type=str, default="http://localhost:21001"
     )
-    parser.add_argument("--model-path", type=str, default="lmsys/vicuna-7b-v1.5")
+    parser.add_argument(
+        "--config", type=str, default=None
+    )
+    parser.add_argument("--model-path", type=str, default="lmsys/vicuna-7b-v1.3")
     parser.add_argument(
         "--model-names",
         type=lambda s: s.split(","),
@@ -261,36 +210,21 @@ if __name__ == "__main__":
     parser.add_argument(
         "--conv-template", type=str, default=None, help="Conversation prompt template."
     )
-    parser.add_argument(
-        "--trust_remote_code",
-        action="store_false",
-        default=True,
-        help="Trust remote code (e.g., from HuggingFace) when"
-        "downloading the model and tokenizer.",
-    )
-    parser.add_argument(
-        "--gpu_memory_utilization",
-        type=float,
-        default=0.9,
-        help="The ratio (between 0 and 1) of GPU memory to"
-        "reserve for the model weights, activations, and KV cache. Higher"
-        "values will increase the KV cache size and thus improve the model's"
-        "throughput. However, if the value is too high, it may cause out-of-"
-        "memory (OOM) errors.",
-    )
-    parser.add_argument(
-        "--config", type=str, default=None
-    )
 
     parser = AsyncEngineArgs.add_cli_args(parser)
     args = parser.parse_args()
 
     if args.config:
         args = VLLMModelWorkerArgParser(args.config).override(args)
+    
+    
     if args.model_path:
         args.model = args.model_path
     if args.num_gpus > 1:
         args.tensor_parallel_size = args.num_gpus
+    # if args.quantization:
+    #     args.quantization = args.quantization
+    args.dtype = "float16"
 
     engine_args = AsyncEngineArgs.from_cli_args(args)
     engine = AsyncLLMEngine.from_engine_args(engine_args)
@@ -304,5 +238,6 @@ if __name__ == "__main__":
         args.no_register,
         engine,
         args.conv_template,
+        args.languages
     )
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")
